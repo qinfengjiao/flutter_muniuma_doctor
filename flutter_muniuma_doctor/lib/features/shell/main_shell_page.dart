@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_muniuma_doctor/core/session/app_session.dart';
 import 'package:flutter_muniuma_doctor/features/auth/login_page.dart';
 import 'package:flutter_muniuma_doctor/features/message/message_page.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/choice_basic_info_page.dart';
 import 'package:flutter_muniuma_doctor/features/workbench/sub_pages.dart';
 import 'package:flutter_muniuma_doctor/features/workbench/workbench_page.dart';
 import 'package:flutter_muniuma_doctor/features/workbench/workbench_repository.dart';
@@ -51,7 +52,10 @@ class _MainShellPageState extends State<MainShellPage> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => ProductLibraryPage(repo: widget.repo),
+                builder: (_) => ChoiceBasicInfoPage(
+                  session: widget.session,
+                  api: widget.repo.api,
+                ),
               ),
             );
             return;
