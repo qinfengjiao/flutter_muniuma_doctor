@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_muniuma_doctor/core/network/api_client.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/clasp_design_page.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_draft.dart';
 
 enum _ToothMode { normal, rework, repair, repeat }
@@ -59,6 +60,7 @@ class _ToothPickerPageState extends State<ToothPickerPage> {
   _ToothMode _mode = _ToothMode.normal;
   String? _dragCode;
   List<_Slot> _slots = const [];
+  final List<String> _claspPaths = [];
 
   static const _newColor = Color(0xFF23A0FF);
   static const _reworkColor = Color(0xFFFA4D32);
@@ -81,6 +83,7 @@ class _ToothPickerPageState extends State<ToothPickerPage> {
         _rework.add(entry.key);
       }
     }
+    _claspPaths.addAll(widget.initial?.claspImagePaths ?? const []);
   }
 
   int _typeOf(String code) {
@@ -222,6 +225,8 @@ class _ToothPickerPageState extends State<ToothPickerPage> {
       }
     }
     product.syncPlants();
+    product.claspImagePaths.addAll(_claspPaths);
+    product.claspDesignCos = widget.initial?.claspDesignCos ?? '';
     Navigator.pop(context, product);
   }
 
@@ -257,10 +262,21 @@ class _ToothPickerPageState extends State<ToothPickerPage> {
     );
   }
 
-  void _openClasp() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(_selected.isEmpty ? '请选择牙位' : '卡环设计即将按原页面接入')),
+  Future<void> _openClasp() async {
+    if (_selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请选择牙位')));
+      return;
+    }
+    final paths = await Navigator.push<List<String>>(
+      context,
+      MaterialPageRoute(builder: (_) => ClaspDesignPage(teeth: _selected.toList())),
     );
+    if (paths == null || !mounted) return;
+    setState(() {
+      _claspPaths
+        ..clear()
+        ..addAll(paths);
+    });
   }
 
   @override

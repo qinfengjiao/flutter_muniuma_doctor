@@ -1,4 +1,5 @@
 import 'package:flutter_muniuma_doctor/core/network/api_client.dart';
+import 'package:flutter_muniuma_doctor/core/network/cos_uploader.dart';
 
 class PlaceOrderRepository {
   PlaceOrderRepository(this.api);
@@ -237,6 +238,36 @@ class PlaceOrderRepository {
       'doctorId': doctorId,
       'productHospitalId': productHospitalId,
     });
+  }
+
+  Future<List<String>> doctorRemarks({
+    required String factoryId,
+    required String hospitalDoctorId,
+    required String keyword,
+  }) async {
+    final data = await api.get('order/Order/GetDoctorRemarkList', query: {
+      'factoryId': factoryId,
+      'hospitalDoctorId': hospitalDoctorId,
+      'keyword': keyword,
+      'PageIndex': 1,
+      'PageSize': 50,
+    });
+    final remarks = <String>[];
+    for (final item in asMapList(data)) {
+      final text = field(item, const ['doctorRemark']).trim();
+      if (text.isNotEmpty) remarks.add(text);
+    }
+    if (remarks.isEmpty && data is List) {
+      for (final item in data) {
+        final text = '$item'.trim();
+        if (text.isNotEmpty && text != 'null') remarks.add(text);
+      }
+    }
+    return remarks;
+  }
+
+  Future<String> uploadFiles(List<String> paths) {
+    return CosUploader(api).uploadPaths(paths);
   }
 
   Future<Map<String, dynamic>> placeOrder(Map<String, dynamic> body) async {

@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_muniuma_doctor/core/network/api_client.dart';
 import 'package:flutter_muniuma_doctor/core/session/app_session.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/choice_basic_info_page.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/order_remark_pages.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_draft.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_repository.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_support_pages.dart';
@@ -151,6 +154,7 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
     edited.trialId = current.trialId;
     edited.trialName = current.trialName;
     edited.designIds.addAll(current.designIds);
+    edited.claspDesignCos = current.claspDesignCos;
     edited.plants
       ..clear()
       ..addAll(current.plants.map(Map<String, dynamic>.from));
@@ -227,6 +231,13 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
     }
     setState(() => _submitting = true);
     try {
+      _draft.colorimetricCos = await widget.repo.uploadFiles(_draft.colorimetricPhotos);
+      _draft.otherPhotoCos = await widget.repo.uploadFiles(_draft.otherPhotos);
+      _draft.audioCos = await widget.repo.uploadFiles(_draft.audios.map((item) => item.path).toList());
+      for (final product in _draft.products) {
+        if (product.claspImagePaths.isEmpty) continue;
+        product.claspDesignCos = await widget.repo.uploadFiles(product.claspImagePaths);
+      }
       final result = await widget.repo.placeOrder(_draft.toPayload());
       if (!mounted) return;
       await Navigator.push(
@@ -980,15 +991,37 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
         children: [
           Row(
             children: [
-              _menuButton('icon_colorimetric', '比色照片'),
+              _menuButton('icon_colorimetric', '比色照片', onTap: () async {
+                await pickOrderPhotos(context, _draft.colorimetricPhotos);
+                if (mounted) setState(() {});
+              }),
               const SizedBox(width: 11),
-              _menuButton('icon_order_icon_照片上传', '其他图片'),
+              _menuButton('icon_order_icon_照片上传', '其他图片', onTap: () async {
+                await pickOrderPhotos(context, _draft.otherPhotos);
+                if (mounted) setState(() {});
+              }),
               const SizedBox(width: 11),
-              _menuButton('icon_order_icon_录音备注', '录音备注'),
+              _menuButton('icon_order_icon_录音备注', '录音备注', onTap: () async {
+                await recordOrderAudio(context, _draft.audios);
+                if (mounted) setState(() {});
+              }),
               const SizedBox(width: 11),
               _menuButton('icon_order_icon_文字备注', '文字备注', onTap: _editRemark),
             ],
           ),
+          _mediaPreview('比色', _draft.colorimetricPhotos),
+          _mediaPreview('图片', _draft.otherPhotos),
+          if (_draft.audios.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '录音 ${_draft.audios.length} 条',
+                  style: const TextStyle(fontSize: 12, color: orderTitleBlue),
+                ),
+              ),
+            ),
           if (_remark.text.trim().isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8),
@@ -1059,47 +1092,42 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
     );
   }
 
-  Future<void> _editRemark() async {
-    final controller = TextEditingController(text: _remark.text);
-    final text = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('文字备注', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: controller,
-                  maxLines: 5,
-                  decoration: const InputDecoration(
-                    hintText: '请输入文字备注',
-                    border: OutlineInputBorder(),
-                  ),
+  Widget _mediaPreview(String title, List<String> photos) {
+    if (photos.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: SizedBox(
+        height: 48,
+        child: Row(
+          children: [
+            Text(title, style: const TextStyle(fontSize: 12, color: orderTitleBlue)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: photos.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
+                itemBuilder: (_, index) => ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Image.file(File(photos[index]), width: 48, height: 48, fit: BoxFit.cover),
                 ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 44,
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: orderBlue),
-                    onPressed: () => Navigator.pop(context, controller.text),
-                    child: const Text('确定'),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
-    controller.dispose();
-    if (text == null) return;
+  }
+
+  Future<void> _editRemark() async {
+    final text = await editOrderRemark(
+      context,
+      initial: _remark.text,
+      repo: widget.repo,
+      factoryId: _draft.factoryId,
+      hospitalDoctorId: _draft.hospitalDoctorId,
+    );
+    if (text == null || !mounted) return;
     setState(() => _remark.text = text);
   }
 

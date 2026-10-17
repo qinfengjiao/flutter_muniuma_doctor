@@ -14,6 +14,13 @@ int asInt(dynamic value) {
   return int.tryParse('$value') ?? 0;
 }
 
+class OrderAudio {
+  OrderAudio(this.path, this.seconds);
+
+  final String path;
+  final int seconds;
+}
+
 class OrderTooth {
   OrderTooth(this.code, {this.productionType = 1});
 
@@ -32,6 +39,8 @@ class OrderProduct {
   String trialId = '';
   String trialName = '';
   final List<String> designIds = [];
+  final List<String> claspImagePaths = [];
+  String claspDesignCos = '';
 
   String get productHospitalId => field(detail, const ['Id', 'id']);
   String get productId => field(detail, const ['productId', 'ProductId']);
@@ -126,6 +135,12 @@ class PlaceOrderDraft {
   int patientSex = 0;
   int patientAge = 0;
   String remark = '';
+  final List<String> colorimetricPhotos = [];
+  final List<String> otherPhotos = [];
+  final List<OrderAudio> audios = [];
+  String colorimetricCos = '';
+  String otherPhotoCos = '';
+  String audioCos = '';
 
   final List<OrderProduct> products = [];
   int connectType = -1;
@@ -341,6 +356,15 @@ class PlaceOrderDraft {
           },
     ];
     if (enclosures.isNotEmpty) body['orderEnclosures'] = enclosures;
+    final doctorFiles = <Map<String, dynamic>>[
+      if (colorimetricCos.isNotEmpty)
+        {'factoryId': factoryId, 'fileCos': colorimetricCos, 'fileType': 2},
+      if (otherPhotoCos.isNotEmpty)
+        {'factoryId': factoryId, 'fileCos': otherPhotoCos, 'fileType': 4},
+      if (audioCos.isNotEmpty)
+        {'factoryId': factoryId, 'fileCos': audioCos, 'fileType': 1},
+    ];
+    if (doctorFiles.isNotEmpty) body['orderDoctorFiles'] = doctorFiles;
     return body;
   }
 
@@ -390,6 +414,9 @@ class PlaceOrderDraft {
           },
     ];
     if (coupons.isNotEmpty) row['orderProductCoupons'] = coupons;
+    if (product.claspDesignCos.isNotEmpty) {
+      row['claspDesignCos'] = product.claspDesignCos;
+    }
     return row;
   }
 
