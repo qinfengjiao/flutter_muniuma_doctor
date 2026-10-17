@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_muniuma_doctor/core/config/app_config.dart';
 import 'package:flutter_muniuma_doctor/core/network/api_client.dart';
 import 'package:flutter_muniuma_doctor/core/session/app_session.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/audio_place_order_page.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_page.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_repository.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_ui.dart';
@@ -137,6 +138,29 @@ class _ChoiceBasicInfoPageState extends State<ChoiceBasicInfoPage> {
     } on ApiException catch (error) {
       if (mounted) _tip(error.message);
     }
+  }
+
+  void _enterVoice() {
+    if (_factoryIndex == null) {
+      _tip('请选择生产单位');
+      return;
+    }
+    if (_doctor == null) {
+      _tip('请选择医生');
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AudioPlaceOrderPage(
+          repo: _repo,
+          session: widget.session,
+          hospital: _hospital!,
+          factory: _factories[_factoryIndex!],
+          doctor: _doctor!,
+        ),
+      ),
+    );
   }
 
   void _enter() {
@@ -490,7 +514,7 @@ class _ChoiceBasicInfoPageState extends State<ChoiceBasicInfoPage> {
                                 borderRadius: BorderRadius.circular(4),
                               ),
                             ),
-                            onPressed: () => _tip('语音下单即将开放'),
+                            onPressed: _enterVoice,
                             icon: const OrderIcon('icon_语音下单', width: 18, height: 18),
                             label: const Text('语音下单', style: TextStyle(fontSize: 18)),
                           ),

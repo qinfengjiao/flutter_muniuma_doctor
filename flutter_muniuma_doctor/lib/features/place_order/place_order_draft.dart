@@ -147,11 +147,15 @@ class PlaceOrderDraft {
   final List<List<String>> segments = [];
   int obtainMould = 1;
   bool canChoiceMould = true;
+  int comeFrom = 1;
+  String voiceOrderRecordId = '';
+  String speechSendNo = '';
   bool takeAttachments = false;
 
   Map<String, dynamic>? scanBrand;
   int sendWayId = 0;
   String sendWayName = '';
+  String scanDataNo = '';
 
   final List<Map<String, dynamic>> colors = [];
   final List<Map<String, dynamic>> designs = [];
@@ -206,6 +210,124 @@ class PlaceOrderDraft {
       canChoiceMould = true;
       obtainMould = doctorMould;
     }
+  }
+
+  /// 把语音识别生成的订单填进草稿，来源记为语音下单。
+  void applySpeech(Map<String, dynamic> speech, {String audioCosJson = ''}) {
+    comeFrom = 6;
+    voiceOrderRecordId = field(speech, const ['voiceOrderRecordId']);
+    speechSendNo = field(speech, const ['sendNo']);
+    patientName = field(speech, const ['patientName']);
+    patientTel = field(speech, const ['patientTel']);
+    patientSex = asInt(speech['patientSex']);
+    patientAge = asInt(speech['patientAge']);
+    remark = field(speech, const ['orderText']);
+    printPhysicalCard = asBool(speech['isPrintPhysicalCard']);
+    takeAttachments = asBool(speech['collectEnclosures']);
+    audioCos = audioCosJson;
+    products.clear();
+    for (final raw in asMapList(speech['orderProducts'])) {
+      final product = _productFromSpeech(raw);
+      if (product != null) products.add(product);
+    }
+    if (products.isNotEmpty) {
+      final detail = products.first.detail;
+      final brandId = field(detail, const ['oralScanBrandId']);
+      if (brandId.isNotEmpty) {
+        scanBrand = {
+          'Id': brandId,
+          'name': field(detail, const ['oralScanBrandName']),
+        };
+      }
+      sendWayId = asInt(detail['oralScanSendType']);
+      sendWayName = field(detail, const ['oralScanSendTypeName']);
+      scanDataNo = field(detail, const ['oralScanDataNo']);
+    }
+    refreshMould();
+    _applyConnect(field(speech, const ['toothConjoined']));
+    for (final product in products) {
+      applyDefaultColor(product);
+    }
+  }
+
+  OrderProduct? _productFromSpeech(Map<String, dynamic> raw) {
+    final id = field(raw, const ['productHospitalId', 'Id', 'id']);
+    if (id.isEmpty) return null;
+    final detail = Map<String, dynamic>.from(raw);
+    detail['Id'] = id;
+    final name = field(raw, const ['customName', 'fullProductName', 'productName']);
+    final product = OrderProduct(
+      group: {'name': name},
+      detail: detail,
+    );
+    final toothRows = asMapList(raw['orderProductTooths']);
+    if (toothRows.isEmpty) {
+      _addSpeechTeeth(product, field(raw, const ['tooth']), 1);
+    } else {
+      for (final row in toothRows) {
+        final type = asInt(row['productionType']);
+        _addSpeechTeeth(product, field(row, const ['tooth']), type == 0 ? 1 : type);
+      }
+    }
+    for (final plant in asMapList(raw['orderProductPlantSystems'])) {
+      final row = Map<String, dynamic>.from(plant);
+      if (field(row, const ['toothSingle']).isEmpty) {
+        row['toothSingle'] = field(row, const ['tooth']);
+      }
+      product.plants.add(row);
+    }
+    if (product.plants.isEmpty) product.syncPlants();
+    final trials = asMapList(raw['orderTrials']);
+    if (trials.isNotEmpty) {
+      product.trialId = field(trials.first, const ['trialId', 'Id', 'id']);
+      product.trialName = field(trials.first, const ['trialName', 'name']);
+    }
+    for (final design in asMapList(raw['orderDesigns'])) {
+      final text = field(design, const ['designs']);
+      product.designIds.addAll(text.split('|').where((item) => item.isNotEmpty));
+    }
+    return product;
+  }
+
+  void _addSpeechTeeth(OrderProduct product, String tooth, int type) {
+    for (final code in tooth.split('|')) {
+      final value = code.trim();
+      if (value.isEmpty) continue;
+      product.teeth.add(OrderTooth(value, productionType: type));
+    }
+  }
+
+  void _applyConnect(String toothConjoined) {
+    if (toothConjoined.isEmpty) return;
+    if (!toothConjoined.contains('|')) {
+      connectType = 0;
+      segments.clear();
+      return;
+    }
+    final groups = toothConjoined
+        .split(',')
+        .where((item) => item.isNotEmpty)
+        .map((item) => item.split('|').where((tooth) => tooth.isNotEmpty).toList())
+        .where((item) => item.isNotEmpty)
+        .toList();
+    if (groups.length == 1) {
+      connectType = 1;
+      segments.clear();
+      return;
+    }
+    if (groups.length == 2) {
+      final first = int.tryParse(groups.first.first) ?? 0;
+      final second = int.tryParse(groups.last.first) ?? 0;
+      if ((first < 30 && second > 30) || (second < 30 && first > 30)) {
+        connectType = 1;
+        segments.clear();
+        return;
+      }
+    }
+    connectType = 2;
+    segments
+      ..clear()
+      ..addAll(groups);
   }
 
   void applyDefaultColor(OrderProduct product) {
@@ -293,8 +415,10 @@ class PlaceOrderDraft {
       'phoneBrand': defaultTargetPlatform.name,
       'phoneOSVer': defaultTargetPlatform.name,
       'phoneSWVer': '1.0.0',
-      'comeFrom': 1,
-      'sendNo': address == null ? '' : field(address!, const ['sendNo']),
+      'comeFrom': comeFrom,
+      'sendNo': speechSendNo.isNotEmpty
+          ? speechSendNo
+          : (address == null ? '' : field(address!, const ['sendNo'])),
       'factoryHospitalId': factoryHospitalId,
       'hospitalDoctorId': hospitalDoctorId,
       'patientName': patientName.trim(),
@@ -304,6 +428,9 @@ class PlaceOrderDraft {
           : takeAttachments,
       'orderProducts': products.map(_productPayload).toList(),
     };
+    if (voiceOrderRecordId.isNotEmpty) {
+      body['voiceOrderRecordId'] = voiceOrderRecordId;
+    }
     if (remark.trim().isNotEmpty) body['doctorRemark'] = remark.trim();
     if (patientTel.isNotEmpty) body['patientTel'] = patientTel;
     if (patientAge > 0) body['patientAge'] = patientAge;
@@ -385,6 +512,7 @@ class PlaceOrderDraft {
       if (brandId.isNotEmpty) {
         row['oralScanBrandId'] = brandId;
         row['oralScanSendType'] = sendWayId;
+        if (scanDataNo.isNotEmpty) row['oralScanDataNo'] = scanDataNo;
       }
     }
     final designIds = designs
@@ -392,6 +520,7 @@ class PlaceOrderDraft {
         .map((item) => field(item, const ['Id', 'id', 'designId']))
         .where((item) => item.isNotEmpty)
         .toList();
+    if (designIds.isEmpty) designIds.addAll(product.designIds);
     if (designIds.isNotEmpty && product.tooth.isNotEmpty) {
       row['orderDesigns'] = [
         {'designs': designIds.join('|'), 'tooth': product.tooth},

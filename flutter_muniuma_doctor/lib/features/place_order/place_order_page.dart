@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -21,6 +22,8 @@ class PlaceOrderPage extends StatefulWidget {
     required this.hospital,
     required this.factory,
     required this.doctor,
+    this.speech,
+    this.speechAudioCos = '',
   });
 
   final PlaceOrderRepository repo;
@@ -28,6 +31,8 @@ class PlaceOrderPage extends StatefulWidget {
   final Map<String, dynamic> hospital;
   final Map<String, dynamic> factory;
   final Map<String, dynamic> doctor;
+  final Map<String, dynamic>? speech;
+  final String speechAudioCos;
 
   @override
   State<PlaceOrderPage> createState() => _PlaceOrderPageState();
@@ -53,6 +58,14 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
   @override
   void initState() {
     super.initState();
+    final speech = widget.speech;
+    if (speech != null) {
+      _draft.applySpeech(speech, audioCosJson: widget.speechAudioCos);
+      _name.text = _draft.patientName;
+      _phone.text = _draft.patientTel;
+      if (_draft.patientAge > 0) _age.text = '${_draft.patientAge}';
+      _remark.text = _draft.remark;
+    }
     _loadAddress();
     _loadScanOptions();
   }
@@ -215,6 +228,17 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
     return Navigator.push<T>(context, MaterialPageRoute(builder: (_) => page));
   }
 
+  String _mergeCos(String current, String added) {
+    if (added.isEmpty) return current;
+    if (current.isEmpty) return added;
+    final first = jsonDecode(current);
+    final second = jsonDecode(added);
+    if (first is List && second is List) {
+      return jsonEncode([...first, ...second]);
+    }
+    return added;
+  }
+
   void _syncInputs() {
     _draft.patientName = _name.text.trim();
     _draft.patientTel = _phone.text.trim();
@@ -233,7 +257,10 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
     try {
       _draft.colorimetricCos = await widget.repo.uploadFiles(_draft.colorimetricPhotos);
       _draft.otherPhotoCos = await widget.repo.uploadFiles(_draft.otherPhotos);
-      _draft.audioCos = await widget.repo.uploadFiles(_draft.audios.map((item) => item.path).toList());
+      final uploadedAudio = await widget.repo.uploadFiles(
+        _draft.audios.map((item) => item.path).toList(),
+      );
+      _draft.audioCos = _mergeCos(_draft.audioCos, uploadedAudio);
       for (final product in _draft.products) {
         if (product.claspImagePaths.isEmpty) continue;
         product.claspDesignCos = await widget.repo.uploadFiles(product.claspImagePaths);

@@ -270,6 +270,34 @@ class PlaceOrderRepository {
     return CosUploader(api).uploadPaths(paths);
   }
 
+  Future<String> speechText({
+    required String speechUrl,
+    required String factoryId,
+  }) async {
+    final data = await api.get('order/Order/GetSpeechDiscernByCreateOrder', query: {
+      'speechUrl': speechUrl,
+      'factoryId': factoryId,
+    });
+    return field(asMap(data), const ['text']);
+  }
+
+  Future<Map<String, dynamic>> createOrderBySpeech({
+    required String speechSourceUrl,
+    required String speechSourceText,
+    required String speechText,
+    required String hospitalDoctorId,
+    required String factoryId,
+  }) async {
+    final data = await api.post('order/Order/CreateOrderBySpeechText', body: {
+      'speechSourceUrl': speechSourceUrl,
+      'speechSourceText': speechSourceText,
+      'speechText': speechText,
+      'hospitalDoctorId': hospitalDoctorId,
+      'factoryId': factoryId,
+    });
+    return asMap(data);
+  }
+
   Future<Map<String, dynamic>> placeOrder(Map<String, dynamic> body) async {
     final data = await api.post('order/Order/PlaceOrders', body: body);
     return asMap(data);
