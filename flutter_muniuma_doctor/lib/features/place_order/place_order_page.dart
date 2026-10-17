@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_muniuma_doctor/core/network/api_client.dart';
 import 'package:flutter_muniuma_doctor/core/session/app_session.dart';
-import 'package:flutter_muniuma_doctor/features/auth/login_page.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/choice_basic_info_page.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_draft.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_repository.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_support_pages.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/place_order_ui.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/product_select_page.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/tooth_picker_page.dart';
 
 class PlaceOrderPage extends StatefulWidget {
   const PlaceOrderPage({
@@ -42,6 +43,9 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
   List<Map<String, dynamic>> _brands = [];
   List<Map<String, dynamic>> _sendWays = [];
   bool _submitting = false;
+  bool _patientOpen = true;
+  bool _detailOpen = false;
+  bool _attachOpen = false;
 
   @override
   void initState() {
@@ -136,20 +140,21 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
 
   Future<void> _editTooth(int index) async {
     final current = _draft.products[index];
-    final edited = await Navigator.push<OrderProduct>(
+    final edited = await showToothPicker(
       context,
-      MaterialPageRoute(
-        builder: (_) => ToothPickerPage(
-          group: current.group,
-          detail: current.detail,
-          initial: current,
-        ),
-      ),
+      group: current.group,
+      detail: current.detail,
+      initial: current,
     );
     if (edited == null || !mounted) return;
     edited.coupons.addAll(current.coupons);
     edited.trialId = current.trialId;
     edited.trialName = current.trialName;
+    edited.designIds.addAll(current.designIds);
+    edited.plants
+      ..clear()
+      ..addAll(current.plants.map(Map<String, dynamic>.from));
+    edited.syncPlants();
     setState(() {
       _draft.products[index] = edited;
       _draft.refreshMould();
@@ -256,320 +261,846 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+
   @override
   Widget build(BuildContext context) {
-    final hospitalName = field(widget.hospital, const ['fullName', 'smallName', 'name']);
-    final factoryName = field(widget.factory, const ['factoryName', 'name']);
-    final doctorName = field(widget.doctor, const ['name', 'doctorName']);
     final hasProduct = _draft.products.isNotEmpty;
-    return Scaffold(
-      backgroundColor: const Color(0xFFF2F7FA),
-      appBar: AppBar(title: const Text('下单')),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
+    return OrderBluePage(
+      title: '下单',
+      bottom: _submitBar(hasProduct),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
         children: [
-          _section('基本信息', [
-            _line('执业单位', hospitalName),
-            _line('生产单位', factoryName),
-            _line('下单医生', doctorName),
-          ]),
-          _section('患者信息', [
-            _input('患者姓名', _name),
-            _input('患者电话', _phone, type: TextInputType.phone),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  const Text('性别'),
-                  const SizedBox(width: 12),
-                  ChoiceChip(
-                    label: const Text('男'),
-                    selected: _draft.patientSex == 1,
-                    onSelected: (_) => setState(() => _draft.patientSex = 1),
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('女'),
-                    selected: _draft.patientSex == 2,
-                    onSelected: (_) => setState(() => _draft.patientSex = 2),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: _age,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: const InputDecoration(
-                        labelText: '年龄',
-                        isDense: true,
-                      ),
-                    ),
-                  ),
+          _headerCard(),
+          const SizedBox(height: 8),
+          _banner('产品信息', add: true, onAdd: _addProduct),
+          Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(8)),
+            ),
+            child: Column(
+              children: [
+                for (var i = 0; i < _draft.products.length; i++) _productCard(i),
+                if (hasProduct) ...[
+                  _connectCard(),
+                  const SizedBox(height: 8),
+                  _mouldCard(),
+                  const SizedBox(height: 8),
+                  _colorCard(),
+                  if (_draft.hasRework) _linkRow('返工原因', _reasonText(), _pickReason),
+                  if (_draft.hasPlant)
+                    _linkRow('种植信息', _plantText(), () async {
+                      final changed = await _push<bool>(
+                        PlantEditPage(repo: widget.repo, draft: _draft),
+                      );
+                      if (changed == true) setState(() {});
+                    }),
                 ],
-              ),
+              ],
             ),
+          ),
+          if (hasProduct) ...[
             const SizedBox(height: 8),
-          ]),
-          _section('产品信息', [
-            for (var i = 0; i < _draft.products.length; i++) _productTile(i),
-            ListTile(
-              leading: const Icon(Icons.add, color: themeBlue),
-              title: const Text('添加产品', style: TextStyle(color: themeBlue)),
-              onTap: _addProduct,
+            _foldBanner(
+              title: '详细内容',
+              icon: _detailOpen ? 'icon_placeorder_详细内容_white' : 'icon_order_icon_详细内容',
+              tip: '展开填写【种植系统、试戴、设计方式】等信息',
+              open: _detailOpen,
+              whiteTitle: _detailOpen,
+              onTap: () => setState(() => _detailOpen = !_detailOpen),
             ),
-            if (hasProduct && _draft.hasSingleConnected) ...[
-              const Divider(height: 1),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                child: const Text('连接方式'),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Wrap(
-                  spacing: 8,
+            if (_detailOpen)
+              Container(
+                color: Colors.white,
+                child: Column(
                   children: [
-                    ChoiceChip(
-                      label: const Text('全部单独'),
-                      selected: _draft.connectType == 0,
-                      onSelected: (_) => setState(() {
-                        _draft.connectType = 0;
-                        _draft.segments.clear();
+                    if (_draft.hasTrial)
+                      _linkRow('试戴', _trialText(), () async {
+                        final changed = await _push<bool>(
+                          TrialEditPage(repo: widget.repo, draft: _draft),
+                        );
+                        if (changed == true) setState(() {});
                       }),
-                    ),
-                    ChoiceChip(
-                      label: const Text('全部连体'),
-                      selected: _draft.connectType == 1,
-                      onSelected: (_) => setState(() {
-                        _draft.connectType = 1;
-                        _draft.segments.clear();
-                      }),
-                    ),
-                    ChoiceChip(
-                      label: const Text('分段'),
-                      selected: _draft.connectType == 2,
-                      onSelected: (_) {
-                        setState(() => _draft.connectType = 2);
-                        _openSegments();
-                      },
-                    ),
+                    _linkRow('设计', _designText(), () async {
+                      final changed = await _push<bool>(
+                        DesignEditPage(repo: widget.repo, draft: _draft),
+                      );
+                      if (changed == true) setState(() {});
+                    }),
                   ],
                 ),
               ),
-              if (_draft.connectType == 2)
-                ListTile(
-                  title: Text(
-                    _draft.segments.isEmpty
-                        ? '请完成分段牙位'
-                        : _draft.segments.map((item) => item.join('|')).join('，'),
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _openSegments,
-                ),
-            ],
-            if (hasProduct) ...[
-              const Divider(height: 1),
-              ListTile(
-                title: const Text('取模方式'),
-                subtitle: Text(mouldName(_draft.obtainMould)),
-              ),
-              if (_draft.canChoiceMould)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  child: Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final entry in mouldOptions.entries)
-                        ChoiceChip(
-                          label: Text(entry.value),
-                          selected: _draft.obtainMould == entry.key,
-                          onSelected: (_) =>
-                              setState(() => _draft.obtainMould = entry.key),
-                        ),
-                    ],
-                  ),
-                ),
-              if (_draft.obtainMould == 2) ...[
-                ListTile(
-                  title: const Text('口扫品牌'),
-                  subtitle: Text(
-                    _draft.scanBrand == null
-                        ? '请选择'
-                        : field(_draft.scanBrand!, const ['name', 'brandName']),
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _pickBrand,
-                ),
-                ListTile(
-                  title: const Text('发送方式'),
-                  subtitle: Text(
-                    _draft.sendWayName.isEmpty ? '请选择' : _draft.sendWayName,
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _pickSendWay,
-                ),
-                SwitchListTile(
-                  title: const Text('上门取附件'),
-                  value: _draft.takeAttachments,
-                  onChanged: (value) => setState(() => _draft.takeAttachments = value),
-                ),
-              ],
-              ListTile(
-                title: Text(_draft.hasRequiredColor ? '颜色（必填）' : '颜色'),
-                subtitle: Text(_colorText()),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () async {
-                  final changed = await _push<bool>(
-                    ColorEditPage(repo: widget.repo, draft: _draft),
-                  );
-                  if (changed == true) setState(() {});
-                },
-              ),
-              if (_draft.hasRework)
-                ListTile(
-                  title: const Text('返工原因'),
-                  subtitle: Text(
-                    _draft.reason == null
-                        ? '请选择'
-                        : field(_draft.reason!, const ['name', 'phenomenonName']),
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _pickReason,
-                ),
-              if (_draft.hasPlant)
-                ListTile(
-                  title: const Text('种植信息'),
-                  subtitle: Text(_plantText()),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    final changed = await _push<bool>(
-                      PlantEditPage(repo: widget.repo, draft: _draft),
-                    );
-                    if (changed == true) setState(() {});
-                  },
-                ),
-            ],
-          ]),
-          if (hasProduct) ...[
-            _section('详细内容', [
-              if (_draft.hasTrial)
-                ListTile(
-                  title: const Text('试戴'),
-                  subtitle: Text(_trialText()),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    final changed = await _push<bool>(
-                      TrialEditPage(repo: widget.repo, draft: _draft),
-                    );
-                    if (changed == true) setState(() {});
-                  },
-                ),
-              ListTile(
-                title: const Text('设计'),
-                subtitle: Text(
-                  _draft.designs.isEmpty
-                      ? '可选'
-                      : _draft.designs
-                          .map((item) => field(item, const ['name', 'designName']))
-                          .where((item) => item.isNotEmpty)
-                          .join('、'),
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () async {
-                  final changed = await _push<bool>(
-                    DesignEditPage(repo: widget.repo, draft: _draft),
-                  );
-                  if (changed == true) setState(() {});
-                },
-              ),
-            ]),
-            _section('附件与备注', [
-              ListTile(
-                title: const Text('附件'),
-                subtitle: Text(
-                  _draft.attachments.isEmpty
-                      ? '可选'
-                      : _draft.attachments
-                          .map(
-                            (item) =>
-                                '${field(item, const ['name', 'enclosureName'])} x${asInt(item['number'])}',
-                          )
-                          .join('、'),
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () async {
-                  final changed = await _push<bool>(
-                    AttachmentEditPage(repo: widget.repo, draft: _draft),
-                  );
-                  if (changed == true) setState(() {});
-                },
-              ),
-              if (_draft.hasWarranty)
-                SwitchListTile(
-                  title: const Text('打印实体质保卡'),
-                  value: _draft.printPhysicalCard,
-                  onChanged: (value) =>
-                      setState(() => _draft.printPhysicalCard = value),
-                ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                child: TextField(
-                  controller: _remark,
-                  minLines: 2,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: '文字备注',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              ListTile(
-                title: const Text('收货地址'),
-                subtitle: Text(_addressText()),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _openAddress,
-              ),
-            ]),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: SizedBox(
-                height: 48,
-                child: FilledButton(
-                  onPressed: _submitting ? null : _submit,
-                  style: FilledButton.styleFrom(backgroundColor: themeBlue),
-                  child: Text(_submitting ? '提交中' : '提交订单'),
-                ),
-              ),
+            const SizedBox(height: 8),
+            _foldBanner(
+              title: '附件内容',
+              icon: _attachOpen ? 'icon_placeorder_附件内容_white' : 'icon_order_icon_附件内容',
+              tip: '展开填写【附件、质保卡】等信息',
+              open: _attachOpen,
+              whiteTitle: _attachOpen,
+              onTap: () => setState(() => _attachOpen = !_attachOpen),
             ),
+            if (_attachOpen)
+              Container(
+                color: Colors.white,
+                child: Column(
+                  children: [
+                    _linkRow('附件', _attachmentText(), () async {
+                      final changed = await _push<bool>(
+                        AttachmentEditPage(repo: widget.repo, draft: _draft),
+                      );
+                      if (changed == true) setState(() {});
+                    }),
+                    if (_draft.hasWarranty)
+                      SwitchListTile(
+                        title: const Text('打印实体质保卡', style: TextStyle(fontSize: 14)),
+                        value: _draft.printPhysicalCard,
+                        activeThumbColor: orderBlue,
+                        onChanged: (value) =>
+                            setState(() => _draft.printPhysicalCard = value),
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
+            _remarkCard(),
           ],
         ],
       ),
     );
   }
 
-  Widget _productTile(int index) {
-    final product = _draft.products[index];
-    final summary = product.teeth
-        .map((item) => '${item.code}${productionName(item.productionType)}')
-        .join(' ');
-    return ListTile(
-      title: Text(product.name),
-      subtitle: Text(summary.isEmpty ? '未选牙位' : summary),
-      trailing: IconButton(
-        onPressed: () => setState(() {
-          _draft.products.removeAt(index);
-          _draft.refreshMould();
-          if (_draft.products.isEmpty) {
-            _draft.colors.clear();
-            _draft.designs.clear();
-            _draft.reason = null;
-            _draft.connectType = -1;
-            _draft.segments.clear();
-          }
-        }),
-        icon: const Icon(Icons.delete_outline),
+  Widget _submitBar(bool visible) {
+    return ColoredBox(
+      color: Colors.white,
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 80,
+          child: visible
+              ? Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                  child: FilledButton(
+                    onPressed: _submitting ? null : _submit,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: orderBlue,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    child: Text(
+                      _submitting ? '提交中' : '提交订单',
+                      style: const TextStyle(fontSize: 18, color: Colors.white),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
       ),
-      onTap: () => _editTooth(index),
     );
+  }
+
+  Widget _headerCard() {
+    final hospital = field(widget.hospital, const ['fullName', 'smallName', 'name']);
+    final doctor = field(widget.doctor, const ['name', 'doctorName']);
+    final factory = field(widget.factory, const ['factoryName', 'name']);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        children: [
+          _infoLine('执行单位', hospital),
+          _infoLine('医生姓名', doctor),
+          _infoLine('生产单位', factory),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 74,
+                  height: 44,
+                  child: Padding(
+                    padding: EdgeInsets.only(left: 12),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('患者姓名', style: TextStyle(fontSize: 12, color: orderInk)),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: _name,
+                    style: const TextStyle(fontSize: 12),
+                    decoration: const InputDecoration(
+                      hintText: '请输入患者姓名',
+                      hintStyle: TextStyle(fontSize: 12, color: orderMuted),
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                _sexButton('男', 1),
+                const SizedBox(width: 8),
+                _sexButton('女', 2),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => setState(() => _patientOpen = !_patientOpen),
+                  child: Row(
+                    children: [
+                      Text(
+                        _patientOpen ? '收起' : '展开',
+                        style: const TextStyle(color: orderTitleBlue, fontSize: 12),
+                      ),
+                      OrderIcon(
+                        'icon_place_order_arrow_blue',
+                        width: 12,
+                        height: 12,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_patientOpen)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+              child: Row(
+                children: [
+                  Expanded(child: _grayField(_phone, '患者手机号（选填）', TextInputType.phone)),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 128,
+                    child: _grayField(
+                      _age,
+                      '患者年龄（选填）',
+                      TextInputType.number,
+                      digits: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoLine(String label, String value) {
+    return SizedBox(
+      height: 44,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 74,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Text(label, style: const TextStyle(fontSize: 12, color: orderInk)),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: orderInk,
+              ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: OrderIcon('icon_place_order_arrow_gray', width: 12, height: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sexButton(String text, int value) {
+    final selected = _draft.patientSex == value;
+    return GestureDetector(
+      onTap: () => setState(() => _draft.patientSex = value),
+      child: Container(
+        width: 52,
+        height: 32,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? orderTitleBlue : orderFieldBg,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 14,
+            color: selected ? Colors.white : orderInk,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _grayField(
+    TextEditingController controller,
+    String hint,
+    TextInputType type, {
+    bool digits = false,
+  }) {
+    return Container(
+      height: 32,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      color: orderFieldBg,
+      child: TextField(
+        controller: controller,
+        keyboardType: type,
+        inputFormatters: digits ? [FilteringTextInputFormatter.digitsOnly] : null,
+        style: const TextStyle(fontSize: 12),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(fontSize: 12, color: orderMuted),
+          border: InputBorder.none,
+          isDense: true,
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+    );
+  }
+
+  Widget _banner(String title, {bool add = false, VoidCallback? onAdd}) {
+    return SizedBox(
+      height: 42,
+      child: Stack(
+        children: [
+          const Positioned(
+            left: 0,
+            top: 0,
+            child: OrderIcon('icon_place_order_section_bg', width: 119, height: 42),
+          ),
+          Positioned(
+            left: 16,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          if (add)
+            Positioned(
+              right: 12,
+              top: 0,
+              bottom: 0,
+              child: GestureDetector(
+                onTap: onAdd,
+                child: const OrderIcon(
+                  'icon_place_order_section_add_item',
+                  width: 18,
+                  height: 18,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _foldBanner({
+    required String title,
+    required String icon,
+    required String tip,
+    required bool open,
+    required bool whiteTitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 42,
+        color: open ? orderTitleBlue : Colors.white,
+        child: Row(
+          children: [
+            const SizedBox(width: 12),
+            OrderIcon(icon, width: 16, height: 16),
+            const SizedBox(width: 4),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: whiteTitle ? Colors.white : orderTitleBlue,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                open ? '' : tip,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 10, color: Color(0xFFBFBFC0)),
+              ),
+            ),
+            OrderIcon(
+              open ? 'icon_order_icon_arrow_收起' : 'icon_order_icon_带背板展开',
+              width: 18,
+              height: 18,
+            ),
+            const SizedBox(width: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _productCard(int index) {
+    final product = _draft.products[index];
+    final tags = <Widget>[];
+    if (product.teeth.any((item) => item.productionType == 1)) {
+      tags.add(_tag('新做', const Color(0xFFE8F5FF), orderBlue));
+    }
+    if (product.teeth.any((item) => item.productionType == 2)) {
+      tags.add(_tag('返工', const Color(0xFFFEEDEA), const Color(0xFFFA4D32)));
+    }
+    if (product.teeth.any((item) => item.productionType == 3)) {
+      tags.add(_tag('返修', const Color(0xFFFFF6E8), const Color(0xFFFFAB1A)));
+    }
+    return Container(
+      margin: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: orderChipBg, width: 4),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(product.name, maxLines: 2, style: const TextStyle(fontSize: 12)),
+                const SizedBox(height: 8),
+                Wrap(spacing: 6, children: tags),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              GestureDetector(
+                onTap: () => _editTooth(index),
+                child: ToothCrossView(teeth: product.teeth.map((item) => item.code).toList()),
+              ),
+              Positioned(
+                right: 0,
+                top: 0,
+                child: GestureDetector(
+                  onTap: () => setState(() {
+                    _draft.products.removeAt(index);
+                    _draft.refreshMould();
+                    if (_draft.products.isEmpty) {
+                      _draft.colors.clear();
+                      _draft.designs.clear();
+                      _draft.reason = null;
+                      _draft.connectType = -1;
+                      _draft.segments.clear();
+                    }
+                  }),
+                  child: const OrderIcon('icon_order_product_delete', width: 16, height: 16),
+                ),
+              ),
+              Positioned(
+                right: 4,
+                top: 20,
+                child: GestureDetector(
+                  onTap: () => _editTooth(index),
+                  child: const OrderIcon('icon_order_product_edit', width: 14, height: 14),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tag(String text, Color bg, Color fg) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      color: bg,
+      child: Text(text, style: TextStyle(fontSize: 12, color: fg)),
+    );
+  }
+
+  Widget _connectCard() {
+    return _optionCard(
+      title: '*连接方式',
+      buttons: [
+        ('全部单独', 0),
+        ('全部连体', 1),
+        ('分段', 2),
+      ],
+      selected: _draft.connectType,
+      onSelect: (value) {
+        setState(() => _draft.connectType = value);
+        if (value == 2) _openSegments();
+      },
+      extra: _draft.connectType == 2
+          ? Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+              child: GestureDetector(
+                onTap: _openSegments,
+                child: Text(
+                  _draft.segments.isEmpty
+                      ? '请完成分段牙位'
+                      : _draft.segments.map((item) => item.join('|')).join('，'),
+                  style: const TextStyle(fontSize: 12, color: orderTitleBlue),
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+
+  Widget _mouldCard() {
+    return _optionCard(
+      title: '*取模方式',
+      buttons: const [
+        ('常规取模', 1),
+        ('工厂灌硅胶', 8),
+        ('口内扫描', 2),
+      ],
+      selected: _draft.obtainMould,
+      onSelect: _draft.canChoiceMould
+          ? (value) => setState(() => _draft.obtainMould = value)
+          : null,
+      extra: _draft.obtainMould == 2
+          ? Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 12, 12),
+              child: Column(
+                children: [
+                  GestureDetector(
+                    onTap: () => setState(() => _draft.takeAttachments = !_draft.takeAttachments),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 72),
+                        OrderIcon(
+                          _draft.takeAttachments
+                              ? 'icon_order_未选_上门取附件'
+                              : 'icon_order_已选_上门取附件',
+                          width: 14,
+                          height: 14,
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          '请接送人员上门取附件',
+                          style: TextStyle(fontSize: 12, color: orderTitleBlue),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Text('发送方式', style: TextStyle(fontSize: 12, color: orderInk)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _arrowBox(_brandText(), _pickBrand)),
+                      const SizedBox(width: 9),
+                      Expanded(child: _arrowBox(_sendText(), _pickSendWay)),
+                    ],
+                  ),
+                ],
+              ),
+            )
+          : null,
+    );
+  }
+
+  Widget _optionCard({
+    required String title,
+    required List<(String, int)> buttons,
+    required int selected,
+    required ValueChanged<int>? onSelect,
+    Widget? extra,
+  }) {
+    final star = title.startsWith('*');
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(8, 14, 8, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: orderChipBg, width: 4),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Text.rich(
+                TextSpan(
+                  children: [
+                    if (star)
+                      const TextSpan(
+                        text: '*',
+                        style: TextStyle(color: Color(0xFFFA4D32), fontSize: 12),
+                      ),
+                    TextSpan(
+                      text: star ? title.substring(1) : title,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: orderInk,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              for (final item in buttons) ...[
+                Expanded(
+                  child: OrderChoiceButton(
+                    text: item.$1,
+                    selected: selected == item.$2,
+                    onTap: onSelect == null ? null : () => onSelect(item.$2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ],
+          ),
+          ?extra,
+        ],
+      ),
+    );
+  }
+
+  Widget _arrowBox(String text, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.only(left: 8),
+        color: orderFieldBg,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: text.contains('请选择') || text == '口扫品牌' || text == '发送方式'
+                      ? orderMuted
+                      : orderInk,
+                ),
+              ),
+            ),
+            const OrderIcon('icon_place_order_arrow_gray', width: 18, height: 18),
+            const SizedBox(width: 4),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _colorCard() {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          const OrderIcon('icon_order_choice_颜色', width: 16, height: 16),
+          const SizedBox(width: 4),
+          const Text('颜色', style: TextStyle(fontSize: 12, color: orderInk)),
+          const Spacer(),
+          GestureDetector(
+            onTap: () async {
+              final changed = await _push<bool>(
+                ColorEditPage(repo: widget.repo, draft: _draft),
+              );
+              if (changed == true) setState(() {});
+            },
+            child: Container(
+              height: 28,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              decoration: BoxDecoration(
+                color: orderBlue,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Row(
+                children: [
+                  Text('添加色板', style: TextStyle(color: Colors.white, fontSize: 12)),
+                  SizedBox(width: 2),
+                  OrderIcon('icon_add_colorPlate', width: 12, height: 12),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _linkRow(String title, String value, VoidCallback onTap) {
+    return ListTile(
+      dense: true,
+      title: Text(title, style: const TextStyle(fontSize: 14)),
+      subtitle: Text(value, style: const TextStyle(fontSize: 12)),
+      trailing: const OrderIcon('icon_place_order_arrow_gray', width: 12, height: 12),
+      onTap: onTap,
+    );
+  }
+
+  Widget _remarkCard() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _menuButton('icon_colorimetric', '比色照片'),
+              const SizedBox(width: 11),
+              _menuButton('icon_order_icon_照片上传', '其他图片'),
+              const SizedBox(width: 11),
+              _menuButton('icon_order_icon_录音备注', '录音备注'),
+              const SizedBox(width: 11),
+              _menuButton('icon_order_icon_文字备注', '文字备注', onTap: _editRemark),
+            ],
+          ),
+          if (_remark.text.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _remark.text.trim(),
+                style: const TextStyle(fontSize: 12, color: orderInk),
+              ),
+            ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: _openAddress,
+            child: Container(
+              height: 36,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF2F7FA),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                children: [
+                  const OrderIcon('icon_order_icon_地址_16pt', width: 16, height: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _addressText(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 14, color: orderInk),
+                    ),
+                  ),
+                  const OrderIcon('icon_place_order_arrow_gray', width: 18, height: 18),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _menuButton(String icon, String title, {VoidCallback? onTap}) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap ?? () => _tip('请在下单备注中补充$title'),
+        child: Container(
+          height: 54,
+          decoration: BoxDecoration(
+            color: orderChipBg,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              OrderIcon(icon, width: 18, height: 18),
+              const SizedBox(height: 4),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: orderTitleBlue,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editRemark() async {
+    final controller = TextEditingController(text: _remark.text);
+    final text = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('文字备注', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    hintText: '请输入文字备注',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(backgroundColor: orderBlue),
+                    onPressed: () => Navigator.pop(context, controller.text),
+                    child: const Text('确定'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    controller.dispose();
+    if (text == null) return;
+    setState(() => _remark.text = text);
   }
 
   Future<void> _pickBrand() async {
@@ -614,16 +1145,35 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
     });
   }
 
-  String _colorText() {
-    if (_draft.colors.isEmpty) return _draft.hasRequiredColor ? '请填写' : '可选';
-    final color = _draft.colors.first;
-    return [
-      field(color, const ['colorMain']),
-      field(color, const ['colorNeck']),
-      field(color, const ['colorMid']),
-      field(color, const ['colorCut']),
-      field(color, const ['customize']),
-    ].where((item) => item.isNotEmpty).join(' / ');
+  String _brandText() {
+    if (_draft.scanBrand == null) return '口扫品牌';
+    final name = field(_draft.scanBrand!, const ['name', 'brandName']);
+    return name.isEmpty ? '口扫品牌' : name;
+  }
+
+  String _sendText() => _draft.sendWayName.isEmpty ? '发送方式' : _draft.sendWayName;
+
+  String _reasonText() {
+    if (_draft.reason == null) return '请选择';
+    return field(_draft.reason!, const ['name', 'phenomenonName']);
+  }
+
+  String _designText() {
+    if (_draft.designs.isEmpty) return '可选';
+    return _draft.designs
+        .map((item) => field(item, const ['name', 'designName']))
+        .where((item) => item.isNotEmpty)
+        .join('、');
+  }
+
+  String _attachmentText() {
+    if (_draft.attachments.isEmpty) return '可选';
+    return _draft.attachments
+        .map(
+          (item) =>
+              '${field(item, const ['name', 'enclosureName'])} x${asInt(item['number'])}',
+        )
+        .join('、');
   }
 
   String _plantText() {
@@ -631,9 +1181,7 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
     for (final product in _draft.products.where((item) => item.isPlant)) {
       for (final plant in product.plants) {
         final name = field(plant, const ['plantSystemName']);
-        names.add(
-          '${field(plant, const ['toothSingle'])}${name.isEmpty ? '未选' : name}',
-        );
+        names.add('${field(plant, const ['toothSingle'])}${name.isEmpty ? '未选' : name}');
       }
     }
     return names.isEmpty ? '请选择' : names.join('、');
@@ -654,48 +1202,5 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
       field(address, const ['tel']),
       field(address, const ['detailAddr', 'address']),
     ].where((item) => item.isNotEmpty).join(' ');
-  }
-
-  Widget _section(String title, List<Widget> children) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      child: Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-            child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-          ),
-          ...children,
-        ],
-      ),
-      ),
-    );
-  }
-
-  Widget _line(String label, String value) {
-    return ListTile(
-      dense: true,
-      title: Text(label),
-      trailing: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 220),
-        child: Text(value, textAlign: TextAlign.end, maxLines: 2),
-      ),
-    );
-  }
-
-  Widget _input(String label, TextEditingController controller, {TextInputType? type}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      child: TextField(
-        controller: controller,
-        keyboardType: type,
-        decoration: InputDecoration(labelText: label, isDense: true),
-      ),
-    );
   }
 }

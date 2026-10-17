@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_muniuma_doctor/core/network/api_client.dart';
 import 'package:flutter_muniuma_doctor/features/auth/login_page.dart';
-import 'package:flutter_muniuma_doctor/features/place_order/place_order_draft.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_repository.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/place_order_ui.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/tooth_picker_page.dart';
 
 class ProductSelectPage extends StatefulWidget {
   const ProductSelectPage({
@@ -201,12 +202,7 @@ class _ProductSelectPageState extends State<ProductSelectPage> {
       if (picked == null || !mounted) return;
       detail = picked;
     }
-    final product = await Navigator.push<OrderProduct>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ToothPickerPage(group: group, detail: detail),
-      ),
-    );
+    final product = await showToothPicker(context, group: group, detail: detail);
     if (product != null && mounted) Navigator.pop(context, product);
   }
 
@@ -236,7 +232,11 @@ class _ProductSelectPageState extends State<ProductSelectPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('产品库')),
+      backgroundColor: orderPageBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        title: const Text('产品库'),
+      ),
       body: Column(
         children: [
           Padding(
@@ -327,19 +327,47 @@ class _ProductSelectPageState extends State<ProductSelectPage> {
                                         'customName',
                                         'productName',
                                       ]);
-                                      return ListTile(
-                                        title: Text(title.isEmpty ? '未命名产品' : title),
-                                        subtitle: Text(
-                                          variants.isEmpty
-                                              ? ''
-                                              : _variantName(variants.first),
+                                      return Container(
+                                        margin: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: const Color(0xFFE8EEF2)),
                                         ),
-                                        trailing: FilledButton(
-                                          onPressed: () => _pick(item),
-                                          style: FilledButton.styleFrom(
-                                            backgroundColor: themeBlue,
-                                          ),
-                                          child: const Text('立即下单'),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    title.isEmpty ? '未命名产品' : title,
+                                                    style: const TextStyle(fontSize: 14),
+                                                  ),
+                                                  if (variants.isNotEmpty)
+                                                    Text(
+                                                      _variantName(variants.first),
+                                                      style: const TextStyle(
+                                                        fontSize: 12,
+                                                        color: Color(0xFF8E8E93),
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            FilledButton(
+                                              onPressed: () => _pick(item),
+                                              style: FilledButton.styleFrom(
+                                                backgroundColor: orderBlue,
+                                                minimumSize: const Size(88, 32),
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                              ),
+                                              child: const Text('立即下单'),
+                                            ),
+                                          ],
                                         ),
                                       );
                                     },
@@ -349,157 +377,6 @@ class _ProductSelectPageState extends State<ProductSelectPage> {
                       ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class ToothPickerPage extends StatefulWidget {
-  const ToothPickerPage({
-    super.key,
-    required this.group,
-    required this.detail,
-    this.initial,
-  });
-
-  final Map<String, dynamic> group;
-  final Map<String, dynamic> detail;
-  final OrderProduct? initial;
-
-  @override
-  State<ToothPickerPage> createState() => _ToothPickerPageState();
-}
-
-class _ToothPickerPageState extends State<ToothPickerPage> {
-  late final Map<String, int> _selected = {
-    for (final tooth in widget.initial?.teeth ?? const <OrderTooth>[])
-      tooth.code: tooth.productionType,
-  };
-  int _type = 1;
-
-  static const _upperRight = ['18', '17', '16', '15', '14', '13', '12', '11'];
-  static const _upperLeft = ['21', '22', '23', '24', '25', '26', '27', '28'];
-  static const _lowerRight = ['48', '47', '46', '45', '44', '43', '42', '41'];
-  static const _lowerLeft = ['31', '32', '33', '34', '35', '36', '37', '38'];
-
-  void _toggle(String code) {
-    setState(() {
-      if (_selected[code] == _type) {
-        _selected.remove(code);
-      } else {
-        _selected[code] = _type;
-      }
-    });
-  }
-
-  void _done() {
-    if (_selected.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请选择牙位')),
-      );
-      return;
-    }
-    final product = OrderProduct(group: widget.group, detail: widget.detail);
-    final codes = _selected.keys.toList()
-      ..sort((a, b) => (int.tryParse(a) ?? 0).compareTo(int.tryParse(b) ?? 0));
-    for (final code in codes) {
-      product.teeth.add(OrderTooth(code, productionType: _selected[code]!));
-    }
-    product.syncPlants();
-    Navigator.pop(context, product);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final title = field(widget.detail, const [
-      'customName',
-      'fullProductName',
-      'productName',
-    ]);
-    return Scaffold(
-      appBar: AppBar(title: Text(title.isEmpty ? '选择牙位' : title)),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: SegmentedButton<int>(
-              segments: const [
-                ButtonSegment(value: 1, label: Text('新做')),
-                ButtonSegment(value: 2, label: Text('返工')),
-                ButtonSegment(value: 3, label: Text('返修')),
-              ],
-              selected: {_type},
-              onSelectionChanged: (value) => setState(() => _type = value.first),
-            ),
-          ),
-          const Text('点选牙位，再次点击相同类型可取消', style: TextStyle(color: Color(0xFF8E8E93))),
-          const SizedBox(height: 12),
-          _toothRow(_upperRight, _upperLeft),
-          const Divider(height: 24),
-          _toothRow(_lowerRight, _lowerLeft),
-          const Spacer(),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: FilledButton(
-                  onPressed: _done,
-                  style: FilledButton.styleFrom(backgroundColor: themeBlue),
-                  child: Text('确定（${_selected.length}）'),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _toothRow(List<String> left, List<String> right) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Row(
-        children: [
-          for (final code in left) _tooth(code),
-          Container(width: 1, height: 36, color: const Color(0xFFD0D0D0)),
-          for (final code in right) _tooth(code),
-        ],
-      ),
-    );
-  }
-
-  Widget _tooth(String code) {
-    final type = _selected[code];
-    final color = switch (type) {
-      2 => const Color(0xFFFF8A00),
-      3 => const Color(0xFF8E5BFF),
-      1 => themeBlue,
-      _ => const Color(0xFFF2F7FA),
-    };
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.all(2),
-        child: InkWell(
-          onTap: () => _toggle(code),
-          child: Container(
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              code,
-              style: TextStyle(
-                fontSize: 11,
-                color: type == null ? const Color(0xFF2C2C2E) : Colors.white,
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

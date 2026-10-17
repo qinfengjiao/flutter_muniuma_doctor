@@ -3,6 +3,7 @@ import 'package:flutter_muniuma_doctor/core/network/api_client.dart';
 import 'package:flutter_muniuma_doctor/features/auth/login_page.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_draft.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_repository.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/place_order_ui.dart';
 import 'package:flutter_muniuma_doctor/features/workbench/sub_pages.dart';
 
 class ColorEditPage extends StatefulWidget {
@@ -977,89 +978,167 @@ class PlaceOrderSuccessPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mail = field(result, const ['mailNo']);
-    final parts = mail.trim().isEmpty ? <String>[] : mail.trim().split(RegExp(r'\s+'));
+    final parts = mail.trim().isEmpty
+        ? const <String>[]
+        : mail.trim().split(RegExp(r'\s+'));
     final expect = field(result, const ['expectArrivalTime']);
     return Scaffold(
-      appBar: AppBar(title: const Text('下单成功')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+      backgroundColor: Colors.white,
+      body: Column(
         children: [
-          const Icon(Icons.check_circle, color: themeBlue, size: 72),
-          const SizedBox(height: 12),
-          const Text('下单成功', textAlign: TextAlign.center, style: TextStyle(fontSize: 22)),
-          const SizedBox(height: 8),
-          const Text(
-            '请记录 6位数寄件号，寄件时告知快递',
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          if (parts.isNotEmpty)
-            Row(
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
               children: [
-                for (final part in parts)
-                  Expanded(
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      height: 56,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF2F7FA),
-                        borderRadius: BorderRadius.circular(8),
+                SizedBox(
+                  height: 224,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const Positioned.fill(
+                        child: OrderIcon('img_下单成功bg', fit: BoxFit.cover),
                       ),
-                      child: Text(part, style: const TextStyle(fontSize: 28)),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 48),
+                        child: Text(
+                          '下单成功',
+                          style: TextStyle(
+                            color: orderTitleBlue,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(24, 16, 24, 0),
+                  child: Text(
+                    '请将以下 6位数寄件号 写到发货包装上发出',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
+                ),
+                if (parts.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(36, 24, 36, 0),
+                    child: Row(
+                      children: [
+                        for (final part in parts)
+                          Expanded(
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              height: 56,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF2F7FA),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                part,
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(29, 24, 29, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '订单号：${field(result, const ['no', 'orderNo'])}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0x73000000),
+                        ),
+                      ),
+                      if (expect.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(expect, style: const TextStyle(fontSize: 14)),
+                        ),
+                      const SizedBox(height: 12),
+                      Text(field(result, const ['factoryFullName', 'factoryName'])),
+                      const SizedBox(height: 8),
+                      Text('模型请寄至 ${field(result, const ['region', 'address'])}'),
+                      Text(
+                        '${field(result, const ['addressee', 'consignee'])} ${field(result, const ['addresseeTel', 'tel'])}',
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
-          const SizedBox(height: 16),
-          Text('订单号：${field(result, const ['no', 'orderNo'])}'),
-          const SizedBox(height: 8),
-          Text(field(result, const ['factoryFullName', 'factoryName'])),
-          const SizedBox(height: 8),
-          Text('模型请寄至 ${field(result, const ['region', 'address'])}'),
-          Text(
-            '${field(result, const ['addressee', 'consignee'])} ${field(result, const ['addresseeTel', 'tel'])}',
           ),
-          if (expect.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text('预计送达：$expect'),
-          ],
-          const SizedBox(height: 24),
-          OutlinedButton(
-            onPressed: () async {
-              final id = field(result, const ['Id', 'id', 'orderId']);
-              if (id.isEmpty) return;
-              try {
-                final detail = await repo.orderDetail(id);
-                if (!context.mounted) return;
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => RecordDetailPage(
-                      title: field(result, const ['no', 'orderNo']),
-                      data: detail.isEmpty ? result : detail,
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF23A0FF),
+                        side: const BorderSide(color: Color(0xFF23A0FF)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      onPressed: () async {
+                        final id = field(result, const ['Id', 'id', 'orderId']);
+                        if (id.isEmpty) return;
+                        try {
+                          final detail = await repo.orderDetail(id);
+                          if (!context.mounted) return;
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => RecordDetailPage(
+                                title: field(result, const ['no', 'orderNo']),
+                                data: detail.isEmpty ? result : detail,
+                              ),
+                            ),
+                          );
+                        } on ApiException catch (error) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(error.message)),
+                          );
+                        }
+                      },
+                      child: const Text('查看订单'),
                     ),
                   ),
-                );
-              } on ApiException catch (error) {
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(error.message)),
-                );
-              }
-            },
-            child: const Text('查看订单'),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: orderBlue,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      onPressed: onContinue,
+                      child: const Text('继续下单'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
+          TextButton(onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst), child: const Text('返回首页')),
           const SizedBox(height: 8),
-          FilledButton(
-            onPressed: onContinue,
-            style: FilledButton.styleFrom(backgroundColor: themeBlue),
-            child: const Text('继续下单'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-            child: const Text('返回首页'),
-          ),
         ],
       ),
     );
