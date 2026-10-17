@@ -68,6 +68,9 @@ flutter:
   assets:
     - assets/place_order/
     - assets/place_order/tooth/
+    - assets/place_order/clasp_tooth/
+    - assets/place_order/clasp/
+    - assets/place_order/clasp_catalog.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
