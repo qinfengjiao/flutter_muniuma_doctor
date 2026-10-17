@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_muniuma_doctor/core/network/api_client.dart';
 import 'package:flutter_muniuma_doctor/core/session/app_session.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/choice_basic_info_page.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/clasp_design_page.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/order_ios_pages.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/order_remark_pages.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_draft.dart';
@@ -196,6 +197,75 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
       _draft.segments.clear();
     });
     if (edited.hasReworkOrRepair && _draft.reason == null) await _pickReason();
+  }
+
+  List<String> _claspSources(OrderProduct product) {
+    if (product.claspImagePaths.isNotEmpty) return product.claspImagePaths;
+    if (product.claspDesignCos.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(product.claspDesignCos);
+      if (decoded is! List) return const [];
+      return [
+        for (final item in decoded)
+          if (item is Map && '${item['url'] ?? ''}'.isNotEmpty) '${item['url']}',
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> _editClasp(int index) async {
+    final product = _draft.products[index];
+    final paths = await Navigator.push<List<String>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ClaspDesignPage(
+          teeth: product.teeth.map((item) => item.code).toSet().toList(),
+        ),
+      ),
+    );
+    if (paths == null || !mounted) return;
+    setState(() {
+      product.claspImagePaths
+        ..clear()
+        ..addAll(paths);
+    });
+  }
+
+  void _previewClasp(String source) {
+    final width = MediaQuery.sizeOf(context).width - 32;
+    final image = source.startsWith('http')
+        ? Image.network(source, fit: BoxFit.contain)
+        : Image.file(File(source), fit: BoxFit.contain);
+    showDialog<void>(
+      context: context,
+      barrierColor: const Color(0x66000000),
+      builder: (context) => Center(
+        child: SizedBox(
+          width: width,
+          height: width,
+          child: Column(
+            children: [
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: ColoredBox(color: Colors.white, child: image),
+                ),
+              ),
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Image.asset(
+                  'assets/place_order/tooth/icon_place_order_close_tips.png',
+                  width: 32,
+                  height: 32,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _pickReason() async {
@@ -737,6 +807,7 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
     if (product.teeth.any((item) => item.productionType == 3)) {
       tags.add(_tag('返修', const Color(0xFFFFF6E8), const Color(0xFFFFAB1A)));
     }
+    final clasps = _claspSources(product);
     return Container(
       margin: const EdgeInsets.fromLTRB(0, 8, 0, 0),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
@@ -745,7 +816,9 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: orderChipBg, width: 4),
       ),
-      child: Row(
+      child: Column(
+        children: [
+          Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
@@ -804,6 +877,59 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
               ),
             ],
           ),
+        ],
+          ),
+          if (clasps.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Container(
+                height: 52,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F8F9),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  children: [
+                    const OrderIcon('icon_marking_12pt', width: 12, height: 12),
+                    const SizedBox(width: 3),
+                    const Text('卡环设计', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    const SizedBox(width: 12),
+                    for (final source in clasps.take(2))
+                      GestureDetector(
+                        onTap: () => _previewClasp(source),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          margin: const EdgeInsets.only(right: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFFCEE7FF)),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: source.startsWith('http')
+                                ? Image.network(source, fit: BoxFit.contain)
+                                : Image.file(File(source), fit: BoxFit.contain),
+                          ),
+                        ),
+                      ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => _editClasp(index),
+                      child: const Row(
+                        children: [
+                          Text('卡环编辑', style: TextStyle(fontSize: 12, color: orderBlue)),
+                          SizedBox(width: 3),
+                          OrderIcon('icon_forward', width: 12, height: 12),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );
