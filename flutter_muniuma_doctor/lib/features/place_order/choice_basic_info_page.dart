@@ -12,10 +12,16 @@ class ChoiceBasicInfoPage extends StatefulWidget {
     super.key,
     required this.session,
     required this.api,
+    this.incoming,
+    this.rework = false,
+    this.presetProduct,
   });
 
   final AppSession session;
   final ApiClient api;
+  final Map<String, dynamic>? incoming;
+  final bool rework;
+  final Map<String, dynamic>? presetProduct;
 
   @override
   State<ChoiceBasicInfoPage> createState() => _ChoiceBasicInfoPageState();
@@ -181,6 +187,9 @@ class _ChoiceBasicInfoPageState extends State<ChoiceBasicInfoPage> {
           hospital: _hospital!,
           factory: _factories[_factoryIndex!],
           doctor: _doctor!,
+          incoming: widget.incoming,
+          rework: widget.rework,
+          presetProduct: widget.presetProduct,
         ),
       ),
     );

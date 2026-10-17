@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_muniuma_doctor/core/network/api_client.dart';
 import 'package:flutter_muniuma_doctor/core/session/app_session.dart';
 import 'package:flutter_muniuma_doctor/features/auth/captcha_sheet.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/choice_basic_info_page.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/place_order_page.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/place_order_repository.dart';
 import 'package:flutter_muniuma_doctor/features/workbench/workbench_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -13,6 +16,7 @@ class RemoteListPage extends StatefulWidget {
     this.itemTitle,
     this.itemSubtitle,
     this.embedded = false,
+    this.onOpen,
   });
 
   final String title;
@@ -20,6 +24,7 @@ class RemoteListPage extends StatefulWidget {
   final String Function(Map<String, dynamic> item)? itemTitle;
   final String Function(Map<String, dynamic> item)? itemSubtitle;
   final bool embedded;
+  final void Function(Map<String, dynamic> item)? onOpen;
 
   @override
   State<RemoteListPage> createState() => _RemoteListPageState();
@@ -106,6 +111,11 @@ class _RemoteListPageState extends State<RemoteListPage> {
                         title: Text(title.isEmpty ? '未命名' : title),
                         subtitle: subtitle.isEmpty ? null : Text(subtitle),
                         onTap: () {
+                          final open = widget.onOpen;
+                          if (open != null) {
+                            open(item);
+                            return;
+                          }
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -123,6 +133,59 @@ class _RemoteListPageState extends State<RemoteListPage> {
     if (widget.embedded) return body;
     return Scaffold(appBar: AppBar(title: Text(widget.title)), body: body);
   }
+}
+
+void _openChoice(
+  BuildContext context,
+  WorkbenchRepository repo, {
+  Map<String, dynamic>? incoming,
+  bool rework = false,
+  Map<String, dynamic>? presetProduct,
+}) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => ChoiceBasicInfoPage(
+        session: repo.session,
+        api: repo.api,
+        incoming: incoming,
+        rework: rework,
+        presetProduct: presetProduct,
+      ),
+    ),
+  );
+}
+
+void _openOrderAgain(BuildContext context, WorkbenchRepository repo, Map<String, dynamic> data, {required bool rework}) {
+  final hospitalId = field(data, const ['hospitalId', 'Id']);
+  final factoryHospitalId = field(data, const ['factoryHospitalId']);
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => PlaceOrderPage(
+        repo: PlaceOrderRepository(repo.api),
+        session: repo.session,
+        hospital: {
+          'Id': hospitalId,
+          'fullName': field(data, const ['hospitalName', 'fullName']),
+        },
+        factory: {
+          'factoryId': field(data, const ['factoryId']),
+          'factoryHospitalId': factoryHospitalId,
+          'factoryName': field(data, const ['factoryName']),
+        },
+        doctor: {
+          'hospitalDoctorId': field(data, const ['hospitalDoctorId']).isEmpty
+              ? repo.session.hospitalDoctorId
+              : field(data, const ['hospitalDoctorId']),
+          'doctorId': field(data, const ['doctorId']),
+          'name': field(data, const ['doctorName']),
+        },
+        incoming: data,
+        rework: rework,
+      ),
+    ),
+  );
 }
 
 class ShippedPage extends StatelessWidget {
@@ -172,7 +235,11 @@ class WaitOrderPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RemoteListPage(title: '待下单', load: repo.waitOrders);
+    return RemoteListPage(
+      title: '待下单',
+      load: repo.waitOrders,
+      onOpen: (item) => _openChoice(context, repo, incoming: item),
+    );
   }
 }
 
@@ -188,6 +255,7 @@ class ProductLibraryPage extends StatelessWidget {
       load: (_) => repo.favorites(),
       itemTitle: (item) => field(item, const ['customName', 'productName']),
       itemSubtitle: (item) => field(item, const ['factoryName', 'priceDisplay']),
+      onOpen: (item) => _openChoice(context, repo, presetProduct: item),
     );
   }
 }
@@ -341,6 +409,28 @@ class _SearchPageState extends State<SearchPage> {
                           field(item, const ['name', 'patientName', 'fullName']),
                         ),
                         subtitle: Text(field(item, const ['phoneNumber', 'orderNo'])),
+                        onTap: () {
+                          if (_tab == 0) {
+                            _openChoice(context, widget.repo, incoming: {
+                              'patientName': field(item, const ['name', 'patientName']),
+                              'patientTel': field(item, const ['phoneNumber', 'patientTel']),
+                              'patientSex': item['sex'] ?? item['patientSex'],
+                              'patientAge': item['age'] ?? item['patientAge'],
+                            });
+                            return;
+                          }
+                          final id = field(item, const ['Id', 'id', 'orderId']);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => OrderDetailPage(
+                                repo: widget.repo,
+                                orderId: id,
+                                preview: item,
+                              ),
+                            ),
+                          );
+                        },
                       );
                     },
                   ),
@@ -543,6 +633,26 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                   padding: EdgeInsets.all(32),
                   child: Text('暂无详情'),
                 )),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => _openOrderAgain(context, widget.repo, data, rework: false),
+                          child: const Text('修改订单'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => _openOrderAgain(context, widget.repo, data, rework: true),
+                          child: const Text('返厂'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
     );

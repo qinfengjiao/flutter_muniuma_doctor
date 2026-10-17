@@ -129,10 +129,13 @@ class PlaceOrderRepository {
     });
   }
 
-  Future<List<Map<String, dynamic>>> colorGroups(List<String> productIds) {
+  Future<List<Map<String, dynamic>>> colorGroups(
+    List<String> productIds, {
+    int position = 1,
+  }) {
     return _list('product/ProductColor/GetGroupColor', {
       'DataStatus': 2,
-      'Position': 1,
+      'Position': position,
       'ProductIds': productIds,
       'PageIndex': 1,
       'PageSize': 9999,
@@ -301,6 +304,38 @@ class PlaceOrderRepository {
   Future<Map<String, dynamic>> placeOrder(Map<String, dynamic> body) async {
     final data = await api.post('order/Order/PlaceOrders', body: body);
     return asMap(data);
+  }
+
+  Future<Map<String, dynamic>> updateOrder(Map<String, dynamic> body) async {
+    final data = await api.post('order/Order/UpdateOrder', body: body);
+    return asMap(data);
+  }
+
+  Future<void> placeExpress(Map<String, dynamic> body, {bool jd = false}) {
+    return api.post(
+      jd ? 'order/DoctorExpress/JdPlace' : 'order/DoctorExpress/SfPlace',
+      body: body,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> pendingExpress(String factoryId) {
+    return _list('order/DoctorExpress/GetDLSList', {
+      'PageIndex': 1,
+      'PageSize': 9999,
+      'factoryId': factoryId,
+    });
+  }
+
+  Future<void> linkExpress({
+    required String doctorExpressId,
+    required String orderId,
+    required String factoryId,
+  }) {
+    return api.post('order/DoctorExpress/LinkOrder', body: {
+      'doctorExpressId': doctorExpressId,
+      'orderIds': [orderId],
+      'factoryId': factoryId,
+    });
   }
 
   Future<Map<String, dynamic>> orderDetail(String id) {

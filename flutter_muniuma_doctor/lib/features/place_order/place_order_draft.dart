@@ -150,6 +150,10 @@ class PlaceOrderDraft {
   int comeFrom = 1;
   String voiceOrderRecordId = '';
   String speechSendNo = '';
+  String editOrderId = '';
+  String oldOrderNo = '';
+  String medicalHistoryId = '';
+  bool returnFactory = false;
   bool takeAttachments = false;
 
   Map<String, dynamic>? scanBrand;
@@ -210,6 +214,54 @@ class PlaceOrderDraft {
       canChoiceMould = true;
       obtainMould = doctorMould;
     }
+  }
+
+  /// 待下单、病历、修改订单、返厂进入时，把已有订单信息填进草稿。
+  void applyIncoming(Map<String, dynamic> source, {bool rework = false}) {
+    patientName = field(source, const ['patientName']);
+    patientTel = field(source, const ['patientTel', 'phoneNumber']);
+    patientSex = asInt(source['patientSex'] ?? source['sex']);
+    patientAge = asInt(source['patientAge'] ?? source['age']);
+    remark = field(source, const ['doctorRemark', 'orderText']);
+    medicalHistoryId = field(source, const ['medicalHistoryId']);
+    final mould = asInt(source['obtainMould']);
+    if (mould > 0) obtainMould = mould;
+    final brandId = field(source, const ['oralScanBrandId']);
+    if (brandId.isNotEmpty) {
+      scanBrand = {'Id': brandId, 'name': field(source, const ['oralScanBrandName'])};
+    }
+    sendWayId = asInt(source['oralScanSendType']);
+    sendWayName = field(source, const ['oralScanSendTypeName']);
+    scanDataNo = field(source, const ['oralScanDataNo']);
+    editOrderId = rework ? '' : field(source, const ['Id', 'id', 'orderId']);
+    if (rework) {
+      returnFactory = true;
+      oldOrderNo = field(source, const ['orderNo', 'no']);
+    }
+    final rows = asMapList(source['orderProducts']).isNotEmpty
+        ? asMapList(source['orderProducts'])
+        : asMapList(source['placeOrderProducts']);
+    if (rows.isNotEmpty) {
+      products.clear();
+      for (final raw in rows) {
+        final product = _productFromSpeech(raw);
+        if (product == null) continue;
+        if (rework) {
+          for (final tooth in product.teeth) {
+            tooth.productionType = 2;
+          }
+        }
+        products.add(product);
+      }
+      refreshMould();
+    }
+    final colorRows = asMapList(source['orderColors']);
+    if (colorRows.isNotEmpty) {
+      colors
+        ..clear()
+        ..addAll(colorRows.map(Map<String, dynamic>.from));
+    }
+    _applyConnect(field(source, const ['toothConjoined']));
   }
 
   /// 把语音识别生成的订单填进草稿，来源记为语音下单。
@@ -431,6 +483,9 @@ class PlaceOrderDraft {
     if (voiceOrderRecordId.isNotEmpty) {
       body['voiceOrderRecordId'] = voiceOrderRecordId;
     }
+    if (oldOrderNo.isNotEmpty) body['oldOrderNo'] = oldOrderNo;
+    if (medicalHistoryId.isNotEmpty) body['medicalHistoryId'] = medicalHistoryId;
+    if (editOrderId.isNotEmpty) body['Id'] = editOrderId;
     if (remark.trim().isNotEmpty) body['doctorRemark'] = remark.trim();
     if (patientTel.isNotEmpty) body['patientTel'] = patientTel;
     if (patientAge > 0) body['patientAge'] = patientAge;
@@ -462,9 +517,8 @@ class PlaceOrderDraft {
         };
         final holeId = field(plant, const ['plantHoleId']);
         if (holeId.isNotEmpty) row['plantHoleId'] = holeId;
-        if (asInt(plant['plantType']) == 1 &&
-            field(plant, const ['secondOperationTime']).isNotEmpty) {
-          row['secondOperationTime'] = field(plant, const ['secondOperationTime']);
+        if (asInt(plant['plantType']) == 1 && asInt(plant['secondOperationTime']) > 0) {
+          row['secondOperationTime'] = asInt(plant['secondOperationTime']);
         }
         if (asInt(plant['plantType']) == 2 &&
             field(plant, const ['plantRodId']).isNotEmpty) {
@@ -515,17 +569,22 @@ class PlaceOrderDraft {
         if (scanDataNo.isNotEmpty) row['oralScanDataNo'] = scanDataNo;
       }
     }
-    final designIds = designs
-        .where((item) => _designMatches(item, product.productId))
-        .map((item) => field(item, const ['Id', 'id', 'designId']))
-        .where((item) => item.isNotEmpty)
-        .toList();
-    if (designIds.isEmpty) designIds.addAll(product.designIds);
-    if (designIds.isNotEmpty && product.tooth.isNotEmpty) {
-      row['orderDesigns'] = [
-        {'designs': designIds.join('|'), 'tooth': product.tooth},
-      ];
+    final designRows = <Map<String, dynamic>>[];
+    final grouped = <String, List<String>>{};
+    for (final item in designs.where((item) => _designMatches(item, product.productId))) {
+      final id = field(item, const ['Id', 'id', 'designId']);
+      if (id.isEmpty) continue;
+      final tooth = field(item, const ['tooth']);
+      grouped.putIfAbsent(tooth.isEmpty ? product.tooth : tooth, () => []).add(id);
     }
+    if (grouped.isEmpty && product.designIds.isNotEmpty && product.tooth.isNotEmpty) {
+      grouped[product.tooth] = [...product.designIds];
+    }
+    for (final entry in grouped.entries) {
+      if (entry.key.isEmpty || entry.value.isEmpty) continue;
+      designRows.add({'designs': entry.value.join('|'), 'tooth': entry.key});
+    }
+    if (designRows.isNotEmpty) row['orderDesigns'] = designRows;
     final tooths = product.orderProductTooths();
     if (tooths.isNotEmpty) row['orderProductTooths'] = tooths;
     if (product.isTrial && product.trialId.isNotEmpty) {
@@ -539,7 +598,9 @@ class PlaceOrderDraft {
           {
             'couponName': field(coupon, const ['couponsName', 'couponName']),
             'userCouponId': asInt(coupon['userCouponId']),
-            'amount': asInt(coupon['amount']),
+            'amount': asInt(coupon['useAmount']) == 0
+                ? 1
+                : asInt(coupon['useAmount']),
           },
     ];
     if (coupons.isNotEmpty) row['orderProductCoupons'] = coupons;

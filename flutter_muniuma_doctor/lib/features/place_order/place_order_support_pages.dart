@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_muniuma_doctor/core/network/api_client.dart';
-import 'package:flutter_muniuma_doctor/features/auth/login_page.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/order_ios_pages.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_draft.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_repository.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_ui.dart';
-import 'package:flutter_muniuma_doctor/features/workbench/sub_pages.dart';
 
 class ColorEditPage extends StatefulWidget {
   const ColorEditPage({super.key, required this.repo, required this.draft});
@@ -141,7 +140,7 @@ class _ColorEditPageState extends State<ColorEditPage> {
           const SizedBox(height: 16),
           FilledButton(
             onPressed: _save,
-            style: FilledButton.styleFrom(backgroundColor: themeBlue),
+            style: FilledButton.styleFrom(backgroundColor: orderBlue),
             child: const Text('保存颜色'),
           ),
         ],
@@ -265,7 +264,7 @@ class _PlantEditPageState extends State<PlantEditPage> {
                   padding: const EdgeInsets.all(16),
                   child: FilledButton(
                     onPressed: () => Navigator.pop(context, true),
-                    style: FilledButton.styleFrom(backgroundColor: themeBlue),
+                    style: FilledButton.styleFrom(backgroundColor: orderBlue),
                     child: const Text('完成'),
                   ),
                 ),
@@ -390,7 +389,7 @@ class _DesignEditPageState extends State<DesignEditPage> {
                       width: double.infinity,
                       child: FilledButton(
                         onPressed: _save,
-                        style: FilledButton.styleFrom(backgroundColor: themeBlue),
+                        style: FilledButton.styleFrom(backgroundColor: orderBlue),
                         child: const Text('保存设计'),
                       ),
                     ),
@@ -482,7 +481,7 @@ class _TrialEditPageState extends State<TrialEditPage> {
                   padding: const EdgeInsets.all(16),
                   child: FilledButton(
                     onPressed: () => Navigator.pop(context, true),
-                    style: FilledButton.styleFrom(backgroundColor: themeBlue),
+                    style: FilledButton.styleFrom(backgroundColor: orderBlue),
                     child: const Text('完成'),
                   ),
                 ),
@@ -587,7 +586,7 @@ class _AttachmentEditPageState extends State<AttachmentEditPage> {
                       width: double.infinity,
                       child: FilledButton(
                         onPressed: _save,
-                        style: FilledButton.styleFrom(backgroundColor: themeBlue),
+                        style: FilledButton.styleFrom(backgroundColor: orderBlue),
                         child: const Text('保存附件'),
                       ),
                     ),
@@ -771,7 +770,7 @@ class _AddressPageState extends State<AddressPage> {
                     ),
                     subtitle: Text(_line(item)),
                     trailing: field(item, const ['Id', 'id']) == widget.currentId
-                        ? const Icon(Icons.check, color: themeBlue)
+                        ? const Icon(Icons.check, color: orderBlue)
                         : null,
                     onTap: () => Navigator.pop(context, item),
                   ),
@@ -863,7 +862,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
           ),
           FilledButton(
             onPressed: _saving ? null : _save,
-            style: FilledButton.styleFrom(backgroundColor: themeBlue),
+            style: FilledButton.styleFrom(backgroundColor: orderBlue),
             child: Text(_saving ? '保存中' : '保存'),
           ),
         ],
@@ -954,7 +953,7 @@ class _SegmentPageState extends State<SegmentPage> {
           const SizedBox(height: 16),
           FilledButton(
             onPressed: () => Navigator.pop(context, _groups),
-            style: FilledButton.styleFrom(backgroundColor: themeBlue),
+            style: FilledButton.styleFrom(backgroundColor: orderBlue),
             child: const Text('完成分段'),
           ),
         ],
@@ -969,11 +968,17 @@ class PlaceOrderSuccessPage extends StatelessWidget {
     required this.result,
     required this.repo,
     required this.onContinue,
+    this.factoryId = '',
+    this.obtainMould = 1,
+    this.pickup = false,
   });
 
   final Map<String, dynamic> result;
   final PlaceOrderRepository repo;
   final VoidCallback onContinue;
+  final String factoryId;
+  final int obtainMould;
+  final bool pickup;
 
   @override
   Widget build(BuildContext context) {
@@ -1078,6 +1083,59 @@ class PlaceOrderSuccessPage extends StatelessWidget {
               ],
             ),
           ),
+          if (pickup && (obtainMould == 1 || obtainMould == 8))
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('业务员将上门取件', textAlign: TextAlign.center, style: TextStyle(color: orderBlue)),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        final orderId = field(result, const ['Id', 'id', 'orderId']);
+                        final factory = factoryId.isNotEmpty
+                            ? factoryId
+                            : field(result, const ['factoryId']);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ExpressPlacePage(
+                              repo: repo,
+                              orderId: orderId,
+                              factoryId: factory,
+                            ),
+                          ),
+                        );
+                      },
+                      child: const Text('下快递单'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: orderBlue),
+                      onPressed: () {
+                        final orderId = field(result, const ['Id', 'id', 'orderId']);
+                        final factory = factoryId.isNotEmpty
+                            ? factoryId
+                            : field(result, const ['factoryId']);
+                        showLinkExpress(
+                          context,
+                          repo: repo,
+                          orderId: orderId,
+                          factoryId: factory,
+                        );
+                      },
+                      child: const Text('关联快递'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           SafeArea(
             top: false,
             child: Padding(
@@ -1100,12 +1158,23 @@ class PlaceOrderSuccessPage extends StatelessWidget {
                         try {
                           final detail = await repo.orderDetail(id);
                           if (!context.mounted) return;
+                          final data = detail.isEmpty ? result : detail;
+                          if (!context.mounted) return;
                           await Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => RecordDetailPage(
-                                title: field(result, const ['no', 'orderNo']),
-                                data: detail.isEmpty ? result : detail,
+                              builder: (_) => Scaffold(
+                                appBar: AppBar(title: Text(field(result, const ['no', 'orderNo']))),
+                                body: ListView(
+                                  children: [
+                                    for (final entry in data.entries)
+                                      if (entry.value is String || entry.value is num)
+                                        ListTile(
+                                          title: Text(entry.key),
+                                          subtitle: Text('${entry.value}'),
+                                        ),
+                                  ],
+                                ),
                               ),
                             ),
                           );

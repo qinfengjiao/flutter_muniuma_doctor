@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_muniuma_doctor/core/network/api_client.dart';
 import 'package:flutter_muniuma_doctor/core/session/app_session.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/choice_basic_info_page.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/order_ios_pages.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/order_remark_pages.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_draft.dart';
 import 'package:flutter_muniuma_doctor/features/place_order/place_order_repository.dart';
@@ -24,6 +25,9 @@ class PlaceOrderPage extends StatefulWidget {
     required this.doctor,
     this.speech,
     this.speechAudioCos = '',
+    this.incoming,
+    this.rework = false,
+    this.presetProduct,
   });
 
   final PlaceOrderRepository repo;
@@ -33,6 +37,9 @@ class PlaceOrderPage extends StatefulWidget {
   final Map<String, dynamic> doctor;
   final Map<String, dynamic>? speech;
   final String speechAudioCos;
+  final Map<String, dynamic>? incoming;
+  final bool rework;
+  final Map<String, dynamic>? presetProduct;
 
   @override
   State<PlaceOrderPage> createState() => _PlaceOrderPageState();
@@ -61,11 +68,22 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
     final speech = widget.speech;
     if (speech != null) {
       _draft.applySpeech(speech, audioCosJson: widget.speechAudioCos);
-      _name.text = _draft.patientName;
-      _phone.text = _draft.patientTel;
-      if (_draft.patientAge > 0) _age.text = '${_draft.patientAge}';
-      _remark.text = _draft.remark;
     }
+    final incoming = widget.incoming;
+    if (incoming != null) _draft.applyIncoming(incoming, rework: widget.rework);
+    final preset = widget.presetProduct;
+    if (preset != null) {
+      final detail = Map<String, dynamic>.from(preset);
+      if (field(detail, const ['Id', 'id']).isEmpty) {
+        detail['Id'] = field(detail, const ['productHospitalId']);
+      }
+      final product = OrderProduct(group: detail, detail: detail);
+      if (product.productHospitalId.isNotEmpty) _draft.products.add(product);
+    }
+    _name.text = _draft.patientName;
+    _phone.text = _draft.patientTel;
+    if (_draft.patientAge > 0) _age.text = '${_draft.patientAge}';
+    _remark.text = _draft.remark;
     _loadAddress();
     _loadScanOptions();
   }
@@ -209,7 +227,7 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
     final groups = await Navigator.push<List<List<String>>>(
       context,
       MaterialPageRoute(
-        builder: (_) => SegmentPage(
+        builder: (_) => ToothSegmentPage(
           teeth: _draft.conjoinedTeeth(),
           initial: _draft.segments,
         ),
@@ -265,7 +283,10 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
         if (product.claspImagePaths.isEmpty) continue;
         product.claspDesignCos = await widget.repo.uploadFiles(product.claspImagePaths);
       }
-      final result = await widget.repo.placeOrder(_draft.toPayload());
+      final payload = _draft.toPayload();
+      final result = _draft.editOrderId.isNotEmpty
+          ? await widget.repo.updateOrder(payload)
+          : await widget.repo.placeOrder(payload);
       if (!mounted) return;
       await Navigator.push(
         context,
@@ -273,6 +294,9 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
           builder: (_) => PlaceOrderSuccessPage(
             result: result,
             repo: widget.repo,
+            factoryId: _draft.factoryId,
+            obtainMould: _draft.obtainMould,
+            pickup: asBool(_draft.address?['isPickUp']),
             onContinue: () {
               final navigator = Navigator.of(context);
               navigator.popUntil((route) => route.isFirst);
@@ -330,7 +354,7 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
                   if (_draft.hasPlant)
                     _linkRow('种植信息', _plantText(), () async {
                       final changed = await _push<bool>(
-                        PlantEditPage(repo: widget.repo, draft: _draft),
+                        PlantDetailPage(repo: widget.repo, draft: _draft),
                       );
                       if (changed == true) setState(() {});
                     }),
@@ -362,7 +386,7 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
                       }),
                     _linkRow('设计', _designText(), () async {
                       final changed = await _push<bool>(
-                        DesignEditPage(repo: widget.repo, draft: _draft),
+                        DesignDetailPage(repo: widget.repo, draft: _draft),
                       );
                       if (changed == true) setState(() {});
                     }),
@@ -731,6 +755,16 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
                 Text(product.name, maxLines: 2, style: const TextStyle(fontSize: 12)),
                 const SizedBox(height: 8),
                 Wrap(spacing: 6, children: tags),
+                if (product.coupons.isNotEmpty)
+                  TextButton(
+                    onPressed: () async {
+                      final changed = await showCoupons(context, product);
+                      if (changed) setState(() {});
+                    },
+                    child: Text(
+                      product.coupons.any((item) => asBool(item['selected'])) ? '已选优惠券' : '优惠券',
+                    ),
+                  ),
               ],
             ),
           ),
@@ -956,45 +990,81 @@ class _PlaceOrderPageState extends State<PlaceOrderPage> {
   }
 
   Widget _colorCard() {
+    final plate = _draft.colors.isEmpty
+        ? ''
+        : field(_draft.colors.first, const ['colorTypeName', 'colorMain']);
     return Container(
       margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Row(
+      child: Column(
         children: [
-          const OrderIcon('icon_order_choice_颜色', width: 16, height: 16),
-          const SizedBox(width: 4),
-          const Text('颜色', style: TextStyle(fontSize: 12, color: orderInk)),
-          const Spacer(),
-          GestureDetector(
-            onTap: () async {
-              final changed = await _push<bool>(
-                ColorEditPage(repo: widget.repo, draft: _draft),
-              );
-              if (changed == true) setState(() {});
-            },
-            child: Container(
-              height: 28,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: orderBlue,
-                borderRadius: BorderRadius.circular(4),
+          Row(
+            children: [
+              const OrderIcon('icon_order_choice_颜色', width: 16, height: 16),
+              const SizedBox(width: 4),
+              const Text('颜色', style: TextStyle(fontSize: 12, color: orderInk)),
+              const Spacer(),
+              GestureDetector(
+                onTap: () async {
+                  final changed = await showColorPlate(context, widget.repo, _draft);
+                  if (changed) setState(() {});
+                },
+                child: Container(
+                  height: 28,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: plate.isEmpty ? orderBlue : Colors.white,
+                    borderRadius: BorderRadius.circular(4),
+                    border: plate.isEmpty ? null : Border.all(color: orderBlue),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    plate.isEmpty ? '添加色板' : plate,
+                    style: TextStyle(color: plate.isEmpty ? Colors.white : orderBlue, fontSize: 12),
+                  ),
+                ),
               ),
-              child: const Row(
-                children: [
-                  Text('添加色板', style: TextStyle(color: Colors.white, fontSize: 12)),
-                  SizedBox(width: 2),
-                  OrderIcon('icon_add_colorPlate', width: 12, height: 12),
-                ],
+            ],
+          ),
+          for (final color in _draft.colors)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(_colorLine(color), style: const TextStyle(fontSize: 12, color: orderInk)),
               ),
             ),
-          ),
+          if (plate.isNotEmpty)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () async {
+                  final changed = await showColorDetail(context, widget.repo, _draft);
+                  if (changed) setState(() {});
+                },
+                child: const Text('添加详细'),
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  String _colorLine(Map<String, dynamic> color) {
+    final parts = <String>[
+      field(color, const ['tooth']),
+      if (field(color, const ['colorMain']).isNotEmpty) '主色 ${field(color, const ['colorMain'])}',
+      if (field(color, const ['colorNeck']).isNotEmpty) '颈 ${field(color, const ['colorNeck'])}',
+      if (field(color, const ['colorMid']).isNotEmpty) '中 ${field(color, const ['colorMid'])}',
+      if (field(color, const ['colorCut']).isNotEmpty) '切 ${field(color, const ['colorCut'])}',
+      if (field(color, const ['colorAbutment']).isNotEmpty) '基牙 ${field(color, const ['colorAbutment'])}',
+      if (field(color, const ['colorGum']).isNotEmpty) '牙龈 ${field(color, const ['colorGum'])}',
+    ];
+    return parts.where((item) => item.isNotEmpty).join('  ');
   }
 
   Widget _linkRow(String title, String value, VoidCallback onTap) {

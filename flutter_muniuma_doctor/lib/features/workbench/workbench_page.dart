@@ -5,6 +5,7 @@ import 'package:flutter_muniuma_doctor/core/session/app_session.dart';
 import 'package:flutter_muniuma_doctor/features/auth/captcha_sheet.dart';
 import 'package:flutter_muniuma_doctor/features/auth/login_page.dart';
 import 'package:flutter_muniuma_doctor/features/common/simple_web_page.dart';
+import 'package:flutter_muniuma_doctor/features/place_order/choice_basic_info_page.dart';
 import 'package:flutter_muniuma_doctor/features/workbench/sub_pages.dart';
 import 'package:flutter_muniuma_doctor/features/workbench/workbench_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -195,12 +196,10 @@ class _WorkbenchPageState extends State<WorkbenchPage> {
                                         widget.session.env.cosDomain,
                                       ),
                                       onTap: () => _push(
-                                        RecordDetailPage(
-                                          title: field(item, const [
-                                            'customName',
-                                            'productName',
-                                          ]),
-                                          data: item,
+                                        ChoiceBasicInfoPage(
+                                          session: widget.session,
+                                          api: widget.repo.api,
+                                          presetProduct: item,
                                         ),
                                       ),
                                     );
@@ -272,7 +271,22 @@ class _WorkbenchPageState extends State<WorkbenchPage> {
       }
       final url =
           '${widget.session.env.medicalRecordDomain}emr_ysapp/#/?token=${Uri.encodeComponent(token)}';
-      _push(SimpleWebPage(title: '病历管理', url: url));
+      _push(SimpleWebPage(
+        title: '病历管理',
+        url: url,
+        onPlaceOrder: (payload) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChoiceBasicInfoPage(
+                session: widget.session,
+                api: widget.repo.api,
+                incoming: payload,
+              ),
+            ),
+          );
+        },
+      ));
     } on ApiException catch (error) {
       if (mounted) showTip(context, error.message);
     }
