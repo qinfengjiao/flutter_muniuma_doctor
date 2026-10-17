@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_muniuma_doctor/core/session/app_session.dart';
 import 'package:flutter_muniuma_doctor/features/auth/login_page.dart';
+import 'package:flutter_muniuma_doctor/features/message/message_page.dart';
 import 'package:flutter_muniuma_doctor/features/workbench/sub_pages.dart';
 import 'package:flutter_muniuma_doctor/features/workbench/workbench_page.dart';
 import 'package:flutter_muniuma_doctor/features/workbench/workbench_repository.dart';
@@ -26,7 +27,7 @@ class _MainShellPageState extends State<MainShellPage> {
   Widget build(BuildContext context) {
     final pages = [
       WorkbenchPage(session: widget.session, repo: widget.repo),
-      MessagePage(repo: widget.repo),
+      MessagePage(session: widget.session, api: widget.repo.api),
       const SizedBox.shrink(),
       OrdersPage(repo: widget.repo),
       MorePage(session: widget.session),
